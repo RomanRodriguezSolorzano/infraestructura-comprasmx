@@ -1,0 +1,318 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  lambdas relacionadas con los contratos, scrapping y guardado en base de datos
+
+
+Parameters:
+  NameBucket:
+    Type: String
+  CarpetaEvento:
+    Type: String
+  CarpetaParcial:
+    Type: String
+  CarpetaGuardar:
+    Type: String
+  HOST:
+    Type: String
+  USER:
+    Type: String
+  PASSWORD:
+    Type: String
+  DBNAME:
+    Type: String
+  PORT:
+    Type: String
+  DIALECT:
+    Type: String
+  ModelsLayers:
+    Type: String
+  SequelizeLayer:
+    Type: String
+  PuppeterLayer:
+    Type: String
+
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Timeout: 60
+    MemorySize: 128
+    #VpcConfig:
+    #  SecurityGroupIds: 
+    #    - sg-63262529
+    #    - sg-083161e42b6e7bad4
+    #  SubnetIds: 
+    #    - subnet-736dd75d
+    #    - subnet-6ea6e924
+    Environment:
+      Variables:
+        HOST: !Ref HOST
+        USER: !Ref USER
+        PASSWORD: !Ref PASSWORD
+        DBNAME: !Ref DBNAME
+        PORT: !Ref PORT
+        DIALECT: !Ref DIALECT
+
+Resources:
+
+  LambdaContratoRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ComprobarContratosRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BedrockAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: Statement1
+                Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                Resource: "*"
+              - Sid: Statement2
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - "arn:aws:bedrock:us-east-1::foundation-model/ai21.j2-ultra"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-instant-v1"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-english-v3"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-lite-v1"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-premier-v1:0"
+        - PolicyName: S3CrudAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "arn:aws:s3:::${NameBucket}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${NameBucket}"
+
+  ObtenerContratosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/contratos/obtenerContratos
+      PackageType: Zip
+      Timeout: 900
+      MemorySize: 1024
+      Handler: handler.obtenerContratos
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref NameBucket
+      Layers:
+          - !Ref ModelsLayers
+          - !Ref SequelizeLayer
+          - !Ref PuppeterLayer
+      Environment:
+        Variables:
+          BUCKETNAME: !Ref NameBucket
+          CARPETA: !Ref CarpetaEvento
+          PARCIAL: !Ref CarpetaParcial
+      Events:
+        DailyScheduleContratos:
+          Type: Schedule
+          Properties:
+            Schedule: cron(01 06 * * ? *)
+            Name: !Sub "daily-schedule-${CarpetaEvento}"
+            Description: "Hace el scrapping todos los dias a las 12:01 am hora de mexico"
+            Enabled: true
+
+  ObtenerContratosParcialesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/contratos/obtenerContratosParciales
+      PackageType: Zip
+      Timeout: 900
+      MemorySize: 1024
+      Handler: handler.obtenerContratosParciales
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref NameBucket
+      Layers:
+          - !Ref ModelsLayers
+          - !Ref SequelizeLayer
+          - !Ref PuppeterLayer
+      Environment:
+        Variables:
+          BUCKETNAME: !Ref NameBucket
+          CARPETA: !Ref CarpetaEvento
+          PARCIAL: !Ref CarpetaParcial
+
+  ComprobarContratosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/contratos/comprobarContratos
+      PackageType: Zip
+      Timeout: 120
+      MemorySize: 512
+      Handler: handler.comprobarContratos
+      Role: !GetAtt LambdaContratoRole.Arn
+      Environment:
+        Variables:
+          BUCKETNAME: !Ref NameBucket
+          CARPETA: !Ref CarpetaGuardar
+      Layers:
+          - !Ref ModelsLayers
+          - !Ref SequelizeLayer
+          - !Ref PuppeterLayer
+          - !Ref ModelosBedrockLayer
+  
+  GuardarContratosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/contratos/guardarContratos
+      PackageType: Zip
+      Timeout: 120
+      MemorySize: 256
+      Handler: handler.guardarContratos
+      VpcConfig:
+        SecurityGroupIds: 
+          - sg-63262529
+          - sg-083161e42b6e7bad4
+        SubnetIds: 
+          - subnet-736dd75d
+          - subnet-6ea6e924
+      Policies:
+        - VPCAccessPolicy: {}
+        - S3CrudPolicy:
+            BucketName: !Ref NameBucket
+      Layers:
+          - !Ref ModelsLayers
+          - !Ref SequelizeLayer
+
+# Evento para invocar lambda por medio de S3.
+# Para terminar la obtencion de las licitaciones, cuando se publican demasiadas en un solo dia
+  EventoParcialS3:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Invocando Lambda para la comprobacion de licitaciones
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        detail:
+          bucket:
+            name:
+              - Ref: NameBucket
+          object:
+            key:
+              - prefix: !Sub ${CarpetaParcial}/
+      Targets:
+        - Arn: !GetAtt ObtenerContratosParcialesFunction.Arn
+          Id: ObtenerContratosParcialesFunctionTarget
+
+  InvocarParcialS3Lambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ObtenerContratosParcialesFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventoParcialS3.Arn
+
+
+
+# Evento para invocar lambda por medio de S3.
+# Para comprobar las licitaciones por medio de un modelo de inteligencia artificial
+  EventoEnvioS3:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Invocando Lambda para la comprobacion de licitaciones
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        detail:
+          bucket:
+            name:
+              - Ref: NameBucket
+          object:
+            key:
+              - prefix: !Sub ${CarpetaEvento}/
+      Targets:
+        - Arn: !GetAtt ComprobarContratosFunction.Arn
+          Id: ComprobarContratosFunctionTarget
+
+  InvocarEnvioS3Lambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ComprobarContratosFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventoEnvioS3.Arn
+
+
+# Evento para invocar lambda por medio de S3
+# Para guardar las informacion clasificada en base de datos
+  EventoGuardarS3:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Invocando Lambda para el guardado de licitaciones
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - "Object Created"
+        detail:
+          bucket:
+            name:
+              - Ref: NameBucket
+          object:
+            key:
+              - prefix: !Sub ${CarpetaGuardar}/
+      Targets:
+        - Arn: !GetAtt GuardarContratosFunction.Arn
+          Id: GuardarContratosFunctionTarget
+
+  InvocarGuardarS3Lambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GuardarContratosFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventoGuardarS3.Arn
+   
+
+
+  #Layers
+  ModelosBedrockLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: LayerModelosBedrock
+      Description: Capa que contiene una funcion para consultar diferentes modelos de bedrock
+      ContentUri: layers/modelos-bedrock
+
+Outputs:
+  ObtenerContratosFunctionArn:
+    Value: !GetAtt ObtenerContratosFunction.Arn
+  ModelosBedrockLayerArn:
+    Value: !Ref ModelosBedrockLayer
+  

@@ -1,0 +1,19 @@
+version = 0.1
+[default.deploy.parameters]
+stack_name = "infraestructura-comprasmx"
+s3_prefix = "infraestructura-comprasmx"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM"
+parameter_overrides = "Entorno=\"prod\""
+image_repositories = []
+
+version = 0.1
+[default.sync.parameters]
+stack_name = "dev-infraestructura-comprasmx"
+resolve_s3 = true
+s3_prefix = "dev-infraestructura-comprasmx"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM"
+parameter_overrides = "Entorno=\"dev\""
+image_repositories = []

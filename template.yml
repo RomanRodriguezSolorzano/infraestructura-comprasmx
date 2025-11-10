@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Microservicios para realizar el scrapping del sitio web comprasmx
+
+
+Mappings:
+  Parametros:
+    dev:
+      STAGE: dev
+      NameAPI: DEV-API
+      #LayerCuestionario: DEV-CuestionarioLayer
+      #NameBucket: dev-grabaciones-encuestas
+      #BucketSid: dev-PermitirAccesoDominiosCORS
+      #RoleName: dev-GrabacionesS3Role 
+      #PolicyName: dev-GrabacionesS3Policys
+      NameBucket: archivos-eventos
+      CarpetaEvento: dev-compramex
+      CarpetaGuardar: dev-compramex-clasificados
+      CarpetaParcial: dev-compramex-parcial
+      HOST: mariadb-test.cicft0jmjsdj.us-east-1.rds.amazonaws.com
+      USER: licitaciones.selectestrategia.net
+      PASSWORD: v9S8HgvSqGkeuBE31T7i
+      DBNAME: 851372_bdselect_dbo
+      PORT: 3306
+      DIALECT: mariadb
+    prod:
+      STAGE: v1
+      NameAPI: API
+      #LayerCuestionario: CuestionarioLayer
+      #NameBucket: grabaciones-encuestas
+      #BucketSid: PermitirAccesoDominiosCORS
+      #RoleName: GrabacionesS3Role 
+      #PolicyName: GrabacionesS3Policys
+      NameBucket: archivos-eventos
+      CarpetaEvento: compramex
+      CarpetaGuardar: compramex-clasificados
+      CarpetaParcial: compramex-parcial
+      HOST: dbselect.cicft0jmjsdj.us-east-1.rds.amazonaws.com
+      USER: licitaciones.selectestrategia.net
+      PASSWORD: v9S8HgvSqGkeuBE31T7i
+      DBNAME: 851372_bdselect_dbo
+      PORT: 3306
+      DIALECT: mariadb
+    layers:
+      ModelsLayers: arn:aws:lambda:us-east-1:701120439971:layer:ModelsDirectorio:967
+      SequelizeLayer: arn:aws:lambda:us-east-1:701120439971:layer:Sequelize:8
+      PuppeterLayer: arn:aws:lambda:us-east-1:701120439971:layer:PuppeteerLayer:19
+
+
+Parameters:
+  Entorno:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Variables de entorno
+
+
+
+Resources:
+  ApiComprasMx:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: api/api.yaml
+      Parameters:
+      #Escenario
+        STAGE: !FindInMap [Parametros, !Ref Entorno, STAGE]
+        NameAPI: !FindInMap [Parametros, !Ref Entorno, NameAPI]
+      #Contratos
+        ObtenerContratosFunctionArn: !GetAtt LambdasContratos.Outputs.ObtenerContratosFunctionArn
+        
+      #Autorizar S3
+        #OtorgarPermisosS3Arn: !GetAtt LambdasPermisosS3.Outputs.OtorgarPermisosS3Arn
+      
+
+  LambdasContratos:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: lambdas/contratos.yaml
+      Parameters:
+        NameBucket: !FindInMap [Parametros, !Ref Entorno, NameBucket]
+        CarpetaEvento: !FindInMap [Parametros, !Ref Entorno, CarpetaEvento]
+        CarpetaGuardar: !FindInMap [Parametros, !Ref Entorno, CarpetaGuardar]
+        CarpetaParcial: !FindInMap [Parametros, !Ref Entorno, CarpetaParcial]
+        HOST: !FindInMap [Parametros, !Ref Entorno, HOST]
+        USER: !FindInMap [Parametros, !Ref Entorno, USER]
+        PASSWORD: !FindInMap [Parametros, !Ref Entorno, PASSWORD]
+        DBNAME: !FindInMap [Parametros, !Ref Entorno, DBNAME]
+        PORT: !FindInMap [Parametros, !Ref Entorno, PORT]
+        DIALECT: !FindInMap [Parametros, !Ref Entorno, DIALECT]
+        ModelsLayers: !FindInMap [Parametros, layers, ModelsLayers]
+        SequelizeLayer: !FindInMap [Parametros, layers, SequelizeLayer]
+        PuppeterLayer: !FindInMap [Parametros, layers, PuppeterLayer]
+
+        
+

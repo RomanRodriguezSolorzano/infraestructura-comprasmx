@@ -1,0 +1,93 @@
+openapi: 3.0.1
+info:
+  title: ${NameAPI}-Cuestionario
+  version: '1.0'
+servers:
+  - url: /v1
+  - url: http://localhost:3000
+paths:
+
+
+#Cuestionario
+#  /cuestionario:
+#    get:
+#      x-amazon-apigateway-integration:
+#        credentials:
+#          Fn::GetAtt:
+#            - ApiGatewayExecutionRole
+#            - Arn
+#        type: aws_proxy
+#        httpMethod: POST
+#        uri:
+#          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetPreguntasCuestionarioArn}/invocations
+#    post:
+#      x-amazon-apigateway-integration:
+#        credentials:
+#          Fn::GetAtt:
+#            - ApiGatewayExecutionRole
+#            - Arn
+#        type: aws_proxy
+#        httpMethod: POST
+#        uri:
+#          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PostGuardarCuestionarioArn}/invocations
+  /obtener-contratos:
+    post:
+      responses:
+        '200':
+          description: "Respuesta exitosa personalizada"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '502':
+          description: "Error al invocar el servicio"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+      x-amazon-apigateway-integration:
+        credentials:
+          Fn::GetAtt:
+            - ApiGatewayExecutionRole
+            - Arn
+        type: AWS
+        httpMethod: POST
+        uri:
+          Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ObtenerContratosFunctionArn}/invocations
+        requestParameters:
+          integration.request.header.X-Amz-Invocation-Type: "'Event'"
+        requestTemplates:
+          application/json: |
+            {
+                #if($input.params().querystring.size() == 0)
+                    "queryStringParameters": null,
+                #else
+                    "queryStringParameters": {
+                        #foreach($param in $input.params().querystring.keySet())
+                        "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"#if($foreach.hasNext),#end
+                        #end
+                    },
+                #end
+                "body": $input.json('$')
+            }
+        integrationResponses:
+          - statusCode: '200'
+            responseTemplates:
+              application/json: |
+                {
+                  "message": "La solicitud ha sido recibida y se está procesando en segundo plano."
+                }
+          - statusCode: '502'
+            selectionPattern: '5\d{2}'
+            responseTemplates:
+              application/json: |
+                {
+                  "message": "Error al intentar invocar el servicio en segundo plano."
+                }
+        passthroughBehavior: when_no_match
