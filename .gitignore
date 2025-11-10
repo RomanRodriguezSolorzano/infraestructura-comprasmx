@@ -94,3 +94,5 @@ sw.*
 
 #AWS SAM
 .aws-sam/
+
+samconfig.toml
