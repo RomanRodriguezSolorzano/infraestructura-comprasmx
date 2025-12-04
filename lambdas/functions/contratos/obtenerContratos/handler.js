@@ -1,4 +1,4 @@
-const { response, logMensaje } = require("utils");
+const { response, logMensaje, LogError } = require("utils");
 const {
    PutObjectCommand,
    S3Client,
