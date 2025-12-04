@@ -4,47 +4,46 @@ Description: >
   Microservicios para realizar el scrapping del sitio web comprasmx
 
 
+
+
 Mappings:
   Parametros:
     dev:
       STAGE: dev
       NameAPI: DEV-API
-      #LayerCuestionario: DEV-CuestionarioLayer
-      #NameBucket: dev-grabaciones-encuestas
-      #BucketSid: dev-PermitirAccesoDominiosCORS
-      #RoleName: dev-GrabacionesS3Role 
+      RoleName: DevComprobarContratosRole 
       #PolicyName: dev-GrabacionesS3Policys
       NameBucket: archivos-eventos
       CarpetaEvento: dev-compramex
       CarpetaGuardar: dev-compramex-clasificados
       CarpetaParcial: dev-compramex-parcial
-      HOST: mariadb-test.cicft0jmjsdj.us-east-1.rds.amazonaws.com
-      USER: licitaciones.selectestrategia.net
-      PASSWORD: v9S8HgvSqGkeuBE31T7i
-      DBNAME: 851372_bdselect_dbo
-      PORT: 3306
-      DIALECT: mariadb
+      HOST: "{{resolve:ssm:/dev/mariadb/host}}"
+      USER: "{{resolve:ssm:/mariadb/user/licitaciones}}"
+      PASSWORD: "{{resolve:ssm:/mariadb/password/licitaciones}}"
+      DBNAME: "{{resolve:ssm:/mariadb/db-name}}"
+      PORT: "{{resolve:ssm:/mariadb/port}}"
+      DIALECT: "{{resolve:ssm:/mariadb/dialect}}"
+      STACK: dev-compras-mx
     prod:
       STAGE: v1
       NameAPI: API
       #LayerCuestionario: CuestionarioLayer
       #NameBucket: grabaciones-encuestas
       #BucketSid: PermitirAccesoDominiosCORS
-      #RoleName: GrabacionesS3Role 
+      RoleName: ComprobarContratosRole 
       #PolicyName: GrabacionesS3Policys
       NameBucket: archivos-eventos
       CarpetaEvento: compramex
       CarpetaGuardar: compramex-clasificados
       CarpetaParcial: compramex-parcial
-      HOST: dbselect.cicft0jmjsdj.us-east-1.rds.amazonaws.com
-      USER: licitaciones.selectestrategia.net
-      PASSWORD: v9S8HgvSqGkeuBE31T7i
-      DBNAME: 851372_bdselect_dbo
-      PORT: 3306
-      DIALECT: mariadb
+      HOST: "{{resolve:ssm:/prod/mariadb/host}}"
+      USER: "{{resolve:ssm:/mariadb/user/licitaciones}}"
+      PASSWORD: "{{resolve:ssm:/mariadb/password/licitaciones}}"
+      DBNAME: "{{resolve:ssm:/mariadb/db-name}}"
+      PORT: "{{resolve:ssm:/mariadb/port}}"
+      DIALECT: "{{resolve:ssm:/mariadb/dialect}}"
+      STACK: compras-mx
     layers:
-      ModelsLayers: arn:aws:lambda:us-east-1:701120439971:layer:ModelsDirectorio:967
-      SequelizeLayer: arn:aws:lambda:us-east-1:701120439971:layer:Sequelize:8
       PuppeterLayer: arn:aws:lambda:us-east-1:701120439971:layer:PuppeteerLayer:19
 
 
@@ -56,8 +55,14 @@ Parameters:
       - dev
       - prod
     Description: Variables de entorno
-
-
+    
+  ModelLayerParameterArn:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: /prod/directorio/layers/models
+  
+  SequelizeLayerParameterArn:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: /prod/directorio/layers/sequelize  
 
 Resources:
   ApiComprasMx:
@@ -80,6 +85,7 @@ Resources:
     Properties:
       Location: lambdas/contratos.yaml
       Parameters:
+        RoleName: !FindInMap [Parametros, !Ref Entorno, RoleName]
         NameBucket: !FindInMap [Parametros, !Ref Entorno, NameBucket]
         CarpetaEvento: !FindInMap [Parametros, !Ref Entorno, CarpetaEvento]
         CarpetaGuardar: !FindInMap [Parametros, !Ref Entorno, CarpetaGuardar]
@@ -90,8 +96,9 @@ Resources:
         DBNAME: !FindInMap [Parametros, !Ref Entorno, DBNAME]
         PORT: !FindInMap [Parametros, !Ref Entorno, PORT]
         DIALECT: !FindInMap [Parametros, !Ref Entorno, DIALECT]
-        ModelsLayers: !FindInMap [Parametros, layers, ModelsLayers]
-        SequelizeLayer: !FindInMap [Parametros, layers, SequelizeLayer]
+        STACK: !FindInMap [Parametros, !Ref Entorno, STACK]
+        ModelsLayers: !Ref ModelLayerParameterArn
+        SequelizeLayer: !Ref SequelizeLayerParameterArn
         PuppeterLayer: !FindInMap [Parametros, layers, PuppeterLayer]
 
         

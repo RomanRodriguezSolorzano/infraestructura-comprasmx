@@ -5,6 +5,10 @@ Description: >
 
 
 Parameters:
+  RoleName:
+    Type: String
+  STACK:
+    Type: String
   NameBucket:
     Type: String
   CarpetaEvento:
@@ -53,13 +57,14 @@ Globals:
         DBNAME: !Ref DBNAME
         PORT: !Ref PORT
         DIALECT: !Ref DIALECT
+        STACK: !Ref AWS::StackName
 
 Resources:
 
   LambdaContratoRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: ComprobarContratosRole
+      RoleName: !Ref RoleName
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -116,6 +121,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/contratos/obtenerContratos
+      FunctionName: !Sub "${STACK}-ObtenerContratos"
       PackageType: Zip
       Timeout: 900
       MemorySize: 1024
@@ -130,6 +136,7 @@ Resources:
       Environment:
         Variables:
           BUCKETNAME: !Ref NameBucket
+          LAMBDA: !Sub "/aws/lambda/${STACK}-ObtenerContratos"
           CARPETA: !Ref CarpetaEvento
           PARCIAL: !Ref CarpetaParcial
       Events:
@@ -145,6 +152,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/contratos/obtenerContratosParciales
+      FunctionName: !Sub "${STACK}-ObtenerContratosParciales"
       PackageType: Zip
       Timeout: 900
       MemorySize: 1024
@@ -161,11 +169,13 @@ Resources:
           BUCKETNAME: !Ref NameBucket
           CARPETA: !Ref CarpetaEvento
           PARCIAL: !Ref CarpetaParcial
+          LAMBDA: !Sub "/aws/lambda/${STACK}-ObtenerContratosParciales"
 
   ComprobarContratosFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/contratos/comprobarContratos
+      FunctionName: !Sub "${STACK}-ComprobarContratos"
       PackageType: Zip
       Timeout: 120
       MemorySize: 512
@@ -175,6 +185,7 @@ Resources:
         Variables:
           BUCKETNAME: !Ref NameBucket
           CARPETA: !Ref CarpetaGuardar
+          LAMBDA: !Sub "/aws/lambda/${STACK}-ComprobarContratos"
       Layers:
           - !Ref ModelsLayers
           - !Ref SequelizeLayer
@@ -185,6 +196,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/contratos/guardarContratos
+      FunctionName: !Sub "${STACK}-GuardarContratos"
       PackageType: Zip
       Timeout: 120
       MemorySize: 256
@@ -200,6 +212,9 @@ Resources:
         - VPCAccessPolicy: {}
         - S3CrudPolicy:
             BucketName: !Ref NameBucket
+      Environment:
+        Variables:
+          LAMBDA: !Sub "/aws/lambda/${STACK}-GuardarContratos"
       Layers:
           - !Ref ModelsLayers
           - !Ref SequelizeLayer

@@ -139,12 +139,12 @@ exports.obtenerContratosParciales = async (event) => {
                }
 
             } catch (e) {
-               console.error(`Error fatal: No se pudo navegar a la página ${paginaDeseada}`);
-               console.error(e);
+               console.log(`Error fatal: No se pudo navegar a la página ${paginaDeseada}`);
+               console.log(e);
                throw e;
             }
          }
-         
+
          const selector = `p-table table tbody tr:nth-child(${contador}) td:nth-child(2)`;
 
          try {
@@ -159,8 +159,8 @@ exports.obtenerContratosParciales = async (event) => {
             }, selector);
 
          } catch (e) {
-            console.error(`Falló el clic en el item: ${selector}. Saltando al siguiente.`);
-            console.error(e);
+            console.log(`Falló el clic en el item: ${selector}. Saltando al siguiente.`);
+            console.log(e);
             await page.goto('https://comprasmx.buengobierno.gob.mx/sitiopublico/#/', {
                waitUntil: 'networkidle2',
                timeout: 60000
@@ -175,8 +175,9 @@ exports.obtenerContratosParciales = async (event) => {
             dataGlobal[i].detalles = await extractDetails(page);
             dataGlobal[i].URL = dataGlobal[i].detalles.URL;
          } catch (extractError) {
-            console.error(`Falló extractDetails en el item ${i + 1}. Saltando.`);
-            console.error(extractError.message);
+            console.error(LogError("extractDetails", extractError, { data: dataGlobal[i] }));
+            console.log(`Falló extractDetails en el item ${i + 1}. Saltando.`);
+            console.log(extractError.message);
             dataGlobal[i].detalles = { error: `Falló la extracción: ${extractError.message}` };
 
             await page.goto('https://comprasmx.buengobierno.gob.mx/sitiopublico/#/', { waitUntil: 'networkidle2' });
@@ -213,6 +214,12 @@ exports.obtenerContratosParciales = async (event) => {
       return response
    } catch (error) {
       await browser.close();
+      /** LogError(funcion, error, datos)
+       * funcion: Nombre de la funcion donde ocurre el error
+       * error: Objeto error capturado
+       * datos: Datos relevantes al contexto del error
+       */
+      console.error(LogError("main", error, { posicionActual, reintentos, fechaInput, fecha }));
       execSync('rm -rf /tmp/chromium*');
       console.log(logMensaje("error", error));
       console.log("error", error);
@@ -251,6 +258,7 @@ function guardarParcial(dataActual, posicionActual, error) {
          const respuesta = await client.send(command);
          resolve(respuesta);
       } catch (error) {
+         console.error(LogError("guardarParcial", error, { dataActual, posicionActual, error }));
          console.log(error);
          reject(error);
       }
@@ -271,7 +279,7 @@ async function extractDetails(page) {
    try {
       await page.waitForSelector('app-sitiopublico-detalle-economicos-pc p-table tbody tr', { timeout: 20000 });
    } catch (error) {
-      console.error("Error: No se pudo encontrar el contenido de las tablas económicas a tiempo.", error.message);
+      console.log("Error: No se pudo encontrar el contenido de las tablas económicas a tiempo.", error.message);
       throw new Error("No se cargo");
    }
    const details = await page.evaluate(() => {

@@ -1,4 +1,4 @@
-const { response, logMensaje } = require("utils");
+const { response, logMensaje, LogError } = require("utils");
 const { ConsultarModelo } = require("modelos-bedrock");
 const { S3Client, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const client = new S3Client({});
@@ -160,7 +160,12 @@ exports.comprobarContratos = async (event) => {
       response.body = "Completado";
       return response
    } catch (error) {
-      console.log(logMensaje("error", error));
+      /** LogError(funcion, error, datos)
+       * funcion: Nombre de la funcion donde ocurre el error
+       * error: Objeto error capturado
+       * datos: Datos relevantes al contexto del error
+       */
+      console.error(LogError("main", error, event));
       console.log("error", error);
       response.statusCode = 500;
       response.body = error.toString();
@@ -187,7 +192,12 @@ async function comprobarIA(modelo, promptSystem, promptUser) {
          const analisis = JSON.parse(peticion).analisis;
          resolve(analisis);
       } catch (error) {
-         console.error("Error:", error);
+         /** LogError(funcion, error, datos)
+       * funcion: Nombre de la funcion donde ocurre el error
+       * error: Objeto error capturado
+       * datos: Datos relevantes al contexto del error
+       */
+         console.error(LogError("comprobarIA", error, { modelo, promptSystem, promptUser }));
          resolve({
             "es_de_TI": "falso",
             "razon": "NA",
@@ -421,9 +431,7 @@ function comprobarPartida(requerimientos, licitacion) {
       }
       return partidasTIC;
    } catch (error) {
-      console.log("requerimientos",requerimientos);
-      console.log("licitacion",licitacion)
-      console.log(error);
+      console.error(LogError("ComprobarPartida", error, { requerimientos, licitacion }));
       throw new Error(error);
    }
 }

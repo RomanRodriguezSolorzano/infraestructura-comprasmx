@@ -7,6 +7,7 @@ const puppeteer = require("puppeteer-core");
 const chromium = require("@sparticuz/chromium");
 let browser;
 const { execSync } = require('child_process');
+let fechaInput;
 
 exports.obtenerContratos = async (event) => {
    console.log(logMensaje("event", event));
@@ -16,7 +17,7 @@ exports.obtenerContratos = async (event) => {
    let total = 0;
    let posicionActual = 0;
    try {
-      const fechaInput = obtenerFechaAyer(event.queryStringParameters);
+      fechaInput = obtenerFechaAyer(event.queryStringParameters);
       browser = await puppeteer.launch({
          executablePath: await chromium.executablePath(),
          headless: chromium.headless,
@@ -104,8 +105,8 @@ exports.obtenerContratos = async (event) => {
                   }
 
                } catch (e) {
-                  console.error(`Error fatal: No se pudo navegar a la página ${paginaDeseada}`);
-                  console.error(e);
+                  console.log(`Error fatal: No se pudo navegar a la página ${paginaDeseada}`);
+                  console.log(e);
                   break;
                }
             }
@@ -124,8 +125,8 @@ exports.obtenerContratos = async (event) => {
                //await new Promise(r => setTimeout(r, 1000));
 
             } catch (e) {
-               console.error(`Falló el clic en el item: ${selector}. Saltando al siguiente.`);
-               console.error(e);
+               console.log(`Falló el clic en el item: ${selector}. Saltando al siguiente.`);
+               console.log(e);
                await page.goto('https://comprasmx.buengobierno.gob.mx/sitiopublico/#/', {
                   waitUntil: 'networkidle2',
                   timeout: 60000
@@ -140,8 +141,9 @@ exports.obtenerContratos = async (event) => {
                dataGlobal[i].detalles = await extractDetails(page);
                dataGlobal[i].URL = dataGlobal[i].detalles.URL;
             } catch (extractError) {
-               console.error(`Falló extractDetails en el item ${i + 1}. Saltando.`);
-               console.error(extractError.message);
+               console.error(LogError("extractDetails", extractError, { data: dataGlobal[i] }));
+               console.log(`Falló extractDetails en el item ${i + 1}. Saltando.`);
+               console.log(extractError.message);
                dataGlobal[i].detalles = { error: `Falló la extracción: ${extractError.message}` };
 
                await page.goto('https://comprasmx.buengobierno.gob.mx/sitiopublico/#/', { waitUntil: 'networkidle2' });
@@ -196,6 +198,12 @@ exports.obtenerContratos = async (event) => {
          return response
       }
    } catch (error) {
+      /** LogError(funcion, error, datos)
+       * funcion: Nombre de la funcion donde ocurre el error
+       * error: Objeto error capturado
+       * datos: Datos relevantes al contexto del error
+       */
+      console.error(LogError("main", error, { posicionActual, total, fechaInput }));
       await browser.close();
       execSync('rm -rf /tmp/chromium*');
       console.log(logMensaje("error", error));
@@ -263,7 +271,7 @@ function textoTotal(page) {
 
          resolve(total);
       } catch (error) {
-         console.error('Error al obtener el texto total:', error.message);
+         console.log('Error al obtener el texto total:', error.message);
          resolve(0)
 
       }
@@ -332,7 +340,7 @@ async function extractDetails(page) {
    try {
       await page.waitForSelector('app-sitiopublico-detalle-economicos-pc p-table tbody tr', { timeout: 20000 });
    } catch (error) {
-      console.error("Error: No se pudo encontrar el contenido de las tablas económicas a tiempo.", error.message);
+      console.log("Error: No se pudo encontrar el contenido de las tablas económicas a tiempo.", error.message);
       throw new Error("No se cargo");
    }
    const details = await page.evaluate(() => {
