@@ -45,9 +45,18 @@ exports.guardarContratos = async (event) => {
       }
       promesas.length = 0;
       try {
+         console.log("listaLicitaciones", listaLicitaciones);
+         console.log(logMensaje("logMensaje(listaLicitaciones)", listaLicitaciones));
          const idsResult = await ejecutarQuery(queryIDs, { listaLicitaciones });
+         console.log("idsResult", idsResult);
+         console.log(logMensaje("logMensaje(idsResult)", idsResult));
          for (const registro of guardarPartidas) {
+            console.log("registro", registro)
+            console.log("registro.listaPartidas", registro.listaPartidas)
+            console.log(" Object.keys(registro.listaPartidas)", registro.listaPartidas ? Object.keys(registro.listaPartidas) : 'esto no se puede')
             const encontrado = idsResult.find(r => r.NoLicitacion == registro.NoLicitacion);
+            console.log("encontrado", encontrado);
+            console.log(logMensaje("logMensaje(encontrado)", encontrado));
             if (encontrado) {
                const compras_id = encontrado.id;
                for (const keys of Object.keys(registro.listaPartidas)) {
@@ -65,6 +74,7 @@ exports.guardarContratos = async (event) => {
                         minimo: partida?.["Cantidad mínima"] || null,
                         maximo: partida?.["Cantidad máxima"] || null,
                      };
+                     console.log("datos partida--->", index + 1, datos);
                      promesas.push(ejecutarQuery(queryRequerimientos, datos, "INSERT"));
                   }
                }

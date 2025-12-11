@@ -12,13 +12,13 @@ let fecha;
 let dataInput;
 const puppeteer = require("puppeteer-core");
 const chromium = require("@sparticuz/chromium");
-let browser;
 const { execSync } = require('child_process');
 const client = new S3Client({});
 
 exports.obtenerContratosParciales = async (event) => {
    console.log(logMensaje("event", event));
    response.statusCode = 200;
+   let browser;
    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
    const bucket = event.detail.bucket.name;
    const key = event.detail.object.key;
@@ -177,14 +177,30 @@ exports.obtenerContratosParciales = async (event) => {
          } catch (extractError) {
             console.error(LogError("extractDetails", extractError, { data: dataGlobal[i] }));
             console.log(`Falló extractDetails en el item ${i + 1}. Saltando.`);
-            console.log(extractError.message);
-            dataGlobal[i].detalles = { error: `Falló la extracción: ${extractError.message}` };
-
-            await page.goto('https://comprasmx.buengobierno.gob.mx/sitiopublico/#/', { waitUntil: 'networkidle2' });
-            await waitForRows(10, 500, page);
-
+            console.log("URL con problema:", dataGlobal[i].URL);
+            console.log("extractError.message:", extractError.message);
+            console.log(extractError);
+            const dataError = JSON.parse(extractError.message);
+            dataGlobal[i].detalles = { error: dataError.message, URL: dataError.URL };
             posicionActual++;
-            continue;
+            const fecha = obtenerNombreArchivo(fechaInput);
+            const data = {
+               fecha,
+               fechaInput: fechaInput,
+               data: dataGlobal,
+               posicionActual,
+               reintento: 0
+            }
+            const command = new PutObjectCommand({
+               Bucket: process.env.BUCKETNAME,
+               Key: process.env.PARCIAL + "/" + fecha + ".json",
+               Body: JSON.stringify(data),
+            });
+            const respuesta = await client.send(command);
+            console.log(respuesta);
+            console.log("Consulta parcial por error de sobrepasar recursos ------------------------->");
+            response.body = "Completado";
+            return response;
          }
          await page.goto('https://comprasmx.buengobierno.gob.mx/sitiopublico/#/', { waitUntil: 'networkidle2' });
          await waitForRows(10, 500, page);
@@ -276,149 +292,161 @@ async function waitForRows(retries = 5, delay = 100, page) {
 
 
 async function extractDetails(page) {
+   let currentURL = 'URL desconocida';
    try {
-      await page.waitForSelector('app-sitiopublico-detalle-economicos-pc p-table tbody tr', { timeout: 20000 });
-   } catch (error) {
-      console.log("Error: No se pudo encontrar el contenido de las tablas económicas a tiempo.", error.message);
-      throw new Error("No se cargo");
+      currentURL = page.url();
+   } catch (e) {
+      console.log("No se pudo obtener la URL inicial:", e.message);
    }
-   const details = await page.evaluate(() => {
-      const scrapedData = {};
-      const sectionTitles = document.querySelectorAll('.titulo-seccion');
-      const excludedSections = ["CRÉDITO EXTERNO", "ANEXOS", "ECONÓMICOS"];
+   try {
+      try {
+         await page.waitForSelector('app-sitiopublico-detalle-economicos-pc p-table tbody tr', { timeout: 30000 });
+      } catch (error) {
+         console.log("Error: No se pudo encontrar el contenido de las tablas económicas a tiempo.", error.message);
+         throw new Error("No se cargo");
+      }
+      const details = await page.evaluate(() => {
+         const scrapedData = {};
+         const sectionTitles = document.querySelectorAll('.titulo-seccion');
+         const excludedSections = ["CRÉDITO EXTERNO", "ANEXOS", "ECONÓMICOS"];
 
-      sectionTitles.forEach(titleElement => {
-         const title = titleElement.querySelector('span')?.innerText.trim();
-         if (!title || excludedSections.includes(title)) {
-            return;
-         }
+         sectionTitles.forEach(titleElement => {
+            const title = titleElement.querySelector('span')?.innerText.trim();
+            if (!title || excludedSections.includes(title)) {
+               return;
+            }
 
-         const contentContainer = titleElement.nextElementSibling?.nextElementSibling;
-         if (!contentContainer) {
-            return;
-         }
+            const contentContainer = titleElement.nextElementSibling?.nextElementSibling;
+            if (!contentContainer) {
+               return;
+            }
 
-         const sectionDetails = {};
-         const fields = contentContainer.querySelectorAll('div[class*="col-"]');
+            const sectionDetails = {};
+            const fields = contentContainer.querySelectorAll('div[class*="col-"]');
 
-         fields.forEach(field => {
-            const label = field.querySelector('label.font-bold');
-            const valueElement = field.querySelector('span') || field.querySelector('label:not(.font-bold)');
+            fields.forEach(field => {
+               const label = field.querySelector('label.font-bold');
+               const valueElement = field.querySelector('span') || field.querySelector('label:not(.font-bold)');
 
-            if (label && valueElement) {
-               const key = label.innerText.trim().replace(/:$/, '');
-               const value = valueElement.innerText.trim();
-               if (key && value) {
-                  sectionDetails[key] = value;
+               if (label && valueElement) {
+                  const key = label.innerText.trim().replace(/:$/, '');
+                  const value = valueElement.innerText.trim();
+                  if (key && value) {
+                     sectionDetails[key] = value;
+                  }
                }
+            });
+
+            if (Object.keys(sectionDetails).length > 0) {
+               scrapedData[title] = sectionDetails;
             }
          });
 
-         if (Object.keys(sectionDetails).length > 0) {
-            scrapedData[title] = sectionDetails;
-         }
-      });
+         const requirementsNode = Array.from(document.querySelectorAll('h1.tituloHome'))
+            .find(h1 => h1.innerText.trim() === 'REQUERIMIENTOS');
 
-      const requirementsNode = Array.from(document.querySelectorAll('h1.tituloHome'))
-         .find(h1 => h1.innerText.trim() === 'REQUERIMIENTOS');
+         if (requirementsNode) {
+            const economicContainer = requirementsNode.parentElement.querySelector('app-sitiopublico-detalle-economicos-pc');
 
-      if (requirementsNode) {
-         const economicContainer = requirementsNode.parentElement.querySelector('app-sitiopublico-detalle-economicos-pc');
+            if (economicContainer) {
+               const partidaContainers = economicContainer.querySelectorAll('div.grid.ng-star-inserted');
 
-         if (economicContainer) {
-            const partidaContainers = economicContainer.querySelectorAll('div.grid.ng-star-inserted');
+               if (partidaContainers.length > 0) {
+                  let genericCounter = 1;
 
-            if (partidaContainers.length > 0) {
-               let genericCounter = 1;
+                  partidaContainers.forEach(container => {
+                     const partidaH1 = container.querySelector('h1.tituloHome');
+                     const table = container.querySelector('p-table table');
 
-               partidaContainers.forEach(container => {
-                  const partidaH1 = container.querySelector('h1.tituloHome');
-                  const table = container.querySelector('p-table table');
+                     if (table) {
+                        const tableData = extractTableData(table);
+                        if (tableData.length > 0) {
+                           if (!scrapedData.hasOwnProperty("Requerimientos")) {
+                              scrapedData["Requerimientos"] = {};
+                           }
 
-                  if (table) {
+                           let partidaName;
+                           if (partidaH1) {
+                              partidaName = partidaH1.innerText.trim();
+                              const partidaDesc = container.querySelector('p');
+                              const partidaDescription = partidaDesc ? partidaDesc.innerText.trim() : '';
+                              if (partidaDescription) {
+                                 partidaName = `${partidaName} - ${partidaDescription}`;
+                              }
+                           } else {
+                              partidaName = `Requerimientos económicos ${genericCounter}`;
+                              genericCounter++;
+                           }
+
+                           scrapedData["Requerimientos"][partidaName] = tableData;
+                        }
+                     }
+                  });
+               } else {
+                  const tables = economicContainer.querySelectorAll('p-table table');
+                  tables.forEach((table, index) => {
                      const tableData = extractTableData(table);
                      if (tableData.length > 0) {
                         if (!scrapedData.hasOwnProperty("Requerimientos")) {
                            scrapedData["Requerimientos"] = {};
                         }
-
-                        let partidaName;
-                        if (partidaH1) {
-                           partidaName = partidaH1.innerText.trim();
-                           const partidaDesc = container.querySelector('p');
-                           const partidaDescription = partidaDesc ? partidaDesc.innerText.trim() : '';
-                           if (partidaDescription) {
-                              partidaName = `${partidaName} - ${partidaDescription}`;
-                           }
-                        } else {
-                           partidaName = `Requerimientos económicos ${genericCounter}`;
-                           genericCounter++;
-                        }
-
-                        scrapedData["Requerimientos"][partidaName] = tableData;
+                        scrapedData["Requerimientos"][`Requerimientos económicos ${index + 1}`] = tableData;
                      }
-                  }
-               });
+                  });
+               }
             } else {
-               const tables = economicContainer.querySelectorAll('p-table table');
-               tables.forEach((table, index) => {
-                  const tableData = extractTableData(table);
-                  if (tableData.length > 0) {
-                     if (!scrapedData.hasOwnProperty("Requerimientos")) {
-                        scrapedData["Requerimientos"] = {};
-                     }
-                     scrapedData["Requerimientos"][`Requerimientos económicos ${index + 1}`] = tableData;
-                  }
-               });
+               console.log('No se encontró el contenedor <app-sitiopublico-detalle-economicos-pc>');
             }
          } else {
-            console.log('No se encontró el contenedor <app-sitiopublico-detalle-economicos-pc>');
+            console.log('No se encontró el H1 "REQUERIMIENTOS"');
          }
-      } else {
-         console.log('No se encontró el H1 "REQUERIMIENTOS"');
-      }
 
-      function extractTableData(tableElement) {
-         const headers = Array.from(tableElement.querySelectorAll('thead th')).map(th => th.innerText.trim());
-         const columnMapping = {
-            num: headers.indexOf('Núm.'),
-            partidaEspecifica: headers.indexOf('Partida específica'),
-            claveCucop: headers.indexOf('Clave CUCoP+'),
-            descCucop: headers.indexOf('Descripción CUCoP+'),
-            descDetallada: headers.indexOf('Descripción detallada'),
-            unidadMedida: headers.indexOf('Unidad de medida'),
-            cantSolicitada: headers.indexOf('Cantidad solicitada'),
-            cantMinima: headers.indexOf('Cantidad mínima'),
-            cantMaxima: headers.indexOf('Cantidad máxima')
-         };
+         function extractTableData(tableElement) {
+            const headers = Array.from(tableElement.querySelectorAll('thead th')).map(th => th.innerText.trim());
+            const columnMapping = {
+               num: headers.indexOf('Núm.'),
+               partidaEspecifica: headers.indexOf('Partida específica'),
+               claveCucop: headers.indexOf('Clave CUCoP+'),
+               descCucop: headers.indexOf('Descripción CUCoP+'),
+               descDetallada: headers.indexOf('Descripción detallada'),
+               unidadMedida: headers.indexOf('Unidad de medida'),
+               cantSolicitada: headers.indexOf('Cantidad solicitada'),
+               cantMinima: headers.indexOf('Cantidad mínima'),
+               cantMaxima: headers.indexOf('Cantidad máxima')
+            };
 
-         const rows = [];
-         tableElement.querySelectorAll('tbody tr').forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length === 0) return;
+            const rows = [];
+            tableElement.querySelectorAll('tbody tr').forEach(row => {
+               const cells = row.querySelectorAll('td');
+               if (cells.length === 0) return;
 
-            const rowData = {};
+               const rowData = {};
 
-            if (columnMapping.num !== -1) rowData['Núm.'] = cells[columnMapping.num]?.innerText.trim();
-            if (columnMapping.partidaEspecifica !== -1) rowData['Partida específica'] = cells[columnMapping.partidaEspecifica]?.innerText.trim();
-            if (columnMapping.claveCucop !== -1) rowData['Clave CUCoP+'] = cells[columnMapping.claveCucop]?.innerText.trim();
-            if (columnMapping.descCucop !== -1) rowData['Descripción CUCoP+'] = cells[columnMapping.descCucop]?.innerText.trim();
-            if (columnMapping.descDetallada !== -1) rowData['Descripción detallada'] = cells[columnMapping.descDetallada]?.innerText.trim();
-            if (columnMapping.unidadMedida !== -1) rowData['Unidad de medida'] = cells[columnMapping.unidadMedida]?.innerText.trim();
-            if (columnMapping.cantSolicitada !== -1) {
-               rowData['Cantidad solicitada'] = cells[columnMapping.cantSolicitada]?.innerText.trim();
-            } else {
-               if (columnMapping.cantMinima !== -1) rowData['Cantidad mínima'] = cells[columnMapping.cantMinima]?.innerText.trim();
-               if (columnMapping.cantMaxima !== -1) rowData['Cantidad máxima'] = cells[columnMapping.cantMaxima]?.innerText.trim();
-            }
+               if (columnMapping.num !== -1) rowData['Núm.'] = cells[columnMapping.num]?.innerText.trim();
+               if (columnMapping.partidaEspecifica !== -1) rowData['Partida específica'] = cells[columnMapping.partidaEspecifica]?.innerText.trim();
+               if (columnMapping.claveCucop !== -1) rowData['Clave CUCoP+'] = cells[columnMapping.claveCucop]?.innerText.trim();
+               if (columnMapping.descCucop !== -1) rowData['Descripción CUCoP+'] = cells[columnMapping.descCucop]?.innerText.trim();
+               if (columnMapping.descDetallada !== -1) rowData['Descripción detallada'] = cells[columnMapping.descDetallada]?.innerText.trim();
+               if (columnMapping.unidadMedida !== -1) rowData['Unidad de medida'] = cells[columnMapping.unidadMedida]?.innerText.trim();
+               if (columnMapping.cantSolicitada !== -1) {
+                  rowData['Cantidad solicitada'] = cells[columnMapping.cantSolicitada]?.innerText.trim();
+               } else {
+                  if (columnMapping.cantMinima !== -1) rowData['Cantidad mínima'] = cells[columnMapping.cantMinima]?.innerText.trim();
+                  if (columnMapping.cantMaxima !== -1) rowData['Cantidad máxima'] = cells[columnMapping.cantMaxima]?.innerText.trim();
+               }
 
-            rows.push(rowData);
-         });
-         return rows;
-      }
+               rows.push(rowData);
+            });
+            return rows;
+         }
 
-      return scrapedData;
-   });
-   details.URL = page.url();
-   return details;
+         return scrapedData;
+      });
+      details.URL = page.url();
+      return details;
+   } catch (error) {
+      console.log("Hay muchas tablas para procesar por lo que se descarta", error);
+      console.log("URL con problema:", currentURL);
+      throw new Error(JSON.stringify({ message: "Problema al intentar cargar las tablas", URL: currentURL }));
+   }
 }

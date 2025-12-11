@@ -115,37 +115,52 @@ exports.comprobarContratos = async (event) => {
          for (const [index, licitacion] of data.entries()) {
             const tablaComprasMX = {
                "NoLicitacion": licitacion["Número de identificación"],
-               "NombreUnidadCompradora": licitacion["detalles"]["DATOS DEL ENTE CONTRATANTE"]["Dependencia o Entidad"],
+               "NombreUnidadCompradora": null,
                "ReferenciaExpendiente": licitacion["URL"],
-               "DescripcionAnuncio": licitacion["detalles"]["DATOS GENERALES"]["Descripción detallada del procedimiento de contratación"],
-               "TipoContratacion": licitacion["detalles"]["DATOS ESPECÍFICOS"]["Tipo de contratación"],
-               "TipoExpediente": licitacion["detalles"]["DATOS GENERALES"]["Tipo de procedimiento de contratación"],
+               "DescripcionAnuncio": null,
+               "TipoContratacion": null,
+               "TipoExpediente": null,
                "FechaJuntaAclaraciones": licitacion["Fecha junta de aclaraciones"] || null,
-               "FechaPresentacionAperturaProposiciones": licitacion["detalles"]["CRONOGRAMA DE EVENTOS"]["Fecha y hora de presentación y apertura de proposiciones"],
+               "FechaPresentacionAperturaProposiciones": null,
                "es_de_TI": null,
                "razon": null,
                "clasificacion": null,
-               "listaPartidas": licitacion["detalles"]["Requerimientos"],
-               "created_at": licitacion["detalles"]["CRONOGRAMA DE EVENTOS"]["Fecha y hora de publicación"]
+               "listaPartidas": null,
+               "created_at": null
             }
-            const comprobar = comprobarPartida(licitacion["detalles"]["Requerimientos"], licitacion);
-            if (comprobar.es_de_TI) {
-               const peticion = `${tablaComprasMX.DescripcionAnuncio}.\nLa licitación anterior tiene los siguientes requerimientos económicos:\n${comprobar.lista_partidas}`;
-               const comprobarConIA = await comprobarIA(modelo, instruccionIA, peticion);
-               tablaComprasMX.es_de_TI = comprobarConIA.es_de_TI;
-               tablaComprasMX.razon = comprobarConIA.razon;
-               tablaComprasMX.clasificacion = comprobarConIA.clasificacion;
-            } else if (comprobar.es_mixto) {
-               tablaComprasMX.es_de_TI = "mixto";
-               tablaComprasMX.razon = "Tiene algunos requerimientos economicos relacionados con TI";
+            if (licitacion["detalles"].hasOwnProperty("error")) {
+               tablaComprasMX.es_de_TI = "manual";
+               tablaComprasMX.razon = "No se pudo obtener toda la información de la licitación por problemas en el sitio; verificar de forma manual.";
                tablaComprasMX.clasificacion = "NA";
+               resp.push(tablaComprasMX);
+            } else {
+               tablaComprasMX.NombreUnidadCompradora = licitacion["detalles"]["DATOS DEL ENTE CONTRATANTE"]["Dependencia o Entidad"] || null;
+               tablaComprasMX.DescripcionAnuncio = licitacion["detalles"]["DATOS GENERALES"]["Descripción detallada del procedimiento de contratación"] || null;
+               tablaComprasMX.TipoContratacion = licitacion["detalles"]["DATOS ESPECÍFICOS"]["Tipo de contratación"] || null;
+               tablaComprasMX.TipoExpediente = licitacion["detalles"]["DATOS GENERALES"]["Tipo de procedimiento de contratación"] || null;
+               tablaComprasMX.FechaPresentacionAperturaProposiciones = licitacion["detalles"]["CRONOGRAMA DE EVENTOS"]["Fecha y hora de presentación y apertura de proposiciones"] || null;
+               tablaComprasMX.created_at = licitacion["detalles"]["CRONOGRAMA DE EVENTOS"]["Fecha y hora de publicación"] || null;
+               const comprobar = comprobarPartida(licitacion["detalles"]["Requerimientos"], licitacion);
+               if (comprobar.es_de_TI) {
+                  const peticion = `${tablaComprasMX.DescripcionAnuncio}.\nLa licitación anterior tiene los siguientes requerimientos económicos:\n${comprobar.lista_partidas}`;
+                  const comprobarConIA = await comprobarIA(modelo, instruccionIA, peticion);
+                  tablaComprasMX.es_de_TI = comprobarConIA.es_de_TI;
+                  tablaComprasMX.razon = comprobarConIA.razon;
+                  tablaComprasMX.clasificacion = comprobarConIA.clasificacion;
+                  tablaComprasMX.listaPartidas = licitacion["detalles"]["Requerimientos"];
+               } else if (comprobar.es_mixto) {
+                  tablaComprasMX.es_de_TI = "mixto";
+                  tablaComprasMX.razon = "Tiene algunos requerimientos economicos relacionados con TI";
+                  tablaComprasMX.clasificacion = "NA";
+                  tablaComprasMX.listaPartidas = licitacion["detalles"]["Requerimientos"];
+               }
+               else {
+                  tablaComprasMX.es_de_TI = "falso";
+                  tablaComprasMX.razon = "Las partidas especificas de los requerimientos economicos no corresponden a TI";
+                  tablaComprasMX.clasificacion = "NA";
+               }
+               resp.push(tablaComprasMX);
             }
-            else {
-               tablaComprasMX.es_de_TI = "falso";
-               tablaComprasMX.razon = "Las partidas especificas de los requerimientos economicos no corresponden a TI";
-               tablaComprasMX.clasificacion = "NA";
-            }
-            resp.push(tablaComprasMX);
          }
       }
       //const fecha = obtenerFechaAyer();
