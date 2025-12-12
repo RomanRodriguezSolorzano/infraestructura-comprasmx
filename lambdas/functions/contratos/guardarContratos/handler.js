@@ -25,12 +25,13 @@ exports.guardarContratos = async (event) => {
       const guardarPartidas = [];
       try {
          for (const registro of data) {
-            promesas.push(ejecutarQuery(query, registro, "INSERT"));
+            promesas.push(ejecutarQuery(query, registro, "INSERT", false));
             if (registro.es_de_TI === "verdadero" || (registro.es_de_TI === "falso" && registro.razon !== "Las partidas especificas de los requerimientos economicos no corresponden a TI")) {
                guardarPartidas.push(registro);
                listaLicitaciones.push(registro.NoLicitacion);
             }
          }
+         await Promise.all(promesas);
       } catch (error) {
          /** LogError(funcion, error, datos)
        * funcion: Nombre de la funcion donde ocurre el error
@@ -45,18 +46,9 @@ exports.guardarContratos = async (event) => {
       }
       promesas.length = 0;
       try {
-         console.log("listaLicitaciones", listaLicitaciones);
-         console.log(logMensaje("logMensaje(listaLicitaciones)", listaLicitaciones));
          const idsResult = await ejecutarQuery(queryIDs, { listaLicitaciones });
-         console.log("idsResult", idsResult);
-         console.log(logMensaje("logMensaje(idsResult)", idsResult));
          for (const registro of guardarPartidas) {
-            console.log("registro", registro)
-            console.log("registro.listaPartidas", registro.listaPartidas)
-            console.log(" Object.keys(registro.listaPartidas)", registro.listaPartidas ? Object.keys(registro.listaPartidas) : 'esto no se puede')
             const encontrado = idsResult.find(r => r.NoLicitacion == registro.NoLicitacion);
-            console.log("encontrado", encontrado);
-            console.log(logMensaje("logMensaje(encontrado)", encontrado));
             if (encontrado) {
                const compras_id = encontrado.id;
                for (const keys of Object.keys(registro.listaPartidas)) {
@@ -74,8 +66,7 @@ exports.guardarContratos = async (event) => {
                         minimo: partida?.["Cantidad mínima"] || null,
                         maximo: partida?.["Cantidad máxima"] || null,
                      };
-                     console.log("datos partida--->", index + 1, datos);
-                     promesas.push(ejecutarQuery(queryRequerimientos, datos, "INSERT"));
+                     promesas.push(ejecutarQuery(queryRequerimientos, datos, "INSERT", false));
                   }
                }
                await Promise.all(promesas);
